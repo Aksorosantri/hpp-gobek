@@ -2,20 +2,18 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="Kalkulator Dagang Multi-Produk", layout="wide")
+st.set_page_config(page_title="Kalkulator Dagang Pro", layout="wide")
 
 st.title("📊 Mode Excel: Multi-Produk & Biaya Rinci")
-st.markdown("Isi kedua tabel di bawah ini. Semua hitungan akan otomatis terupdate!")
+st.markdown("Isi tabel di bawah ini. Gunakan angka saja tanpa titik/koma saat input.")
 
 # --- 1. TABEL DAFTAR PRODUK ---
 st.subheader("📦 1. Daftar Produk")
-st.caption("Masukkan semua barang daganganmu di sini. Klik (+) untuk tambah barang baru.")
+st.caption("Klik (+) untuk tambah barang baru. Isi 'Stok' dan 'Harga Beli Total'.")
 
-# Inisialisasi template tabel produk
 if 'df_produk' not in st.session_state:
     st.session_state.df_produk = pd.DataFrame([
-        {"Nama Barang": "Produk A", "Stok": 10, "Harga Beli Total": 100000},
-        {"Nama Barang": "Produk B", "Stok": 5, "Harga Beli Total": 50000}
+        {"Nama Barang": "Produk A", "Stok": 10, "Harga Beli Total": 100000}
     ])
 
 edited_produk = st.data_editor(
@@ -25,16 +23,13 @@ edited_produk = st.data_editor(
     key="produk_editor"
 )
 
-st.markdown("---")
-
 # --- 2. TABEL BIAYA OPERASIONAL ---
 st.subheader("🛠️ 2. Rincian Biaya Operasional Umum")
-st.caption("Biaya ini adalah total biaya operasional (misal: ongkir total, total plastik) yang akan dibagi rata ke semua stok barang di atas.")
+st.caption("Contoh: Ongkir total, Listrik, atau Packing.")
 
 if 'df_ops' not in st.session_state:
     st.session_state.df_ops = pd.DataFrame([
-        {"Komponen Biaya": "Ongkir Masuk", "Nominal (Rp)": 15000},
-        {"Komponen Biaya": "Packing & Lakban", "Nominal (Rp)": 5000}
+        {"Komponen Biaya": "Biaya Lain-lain", "Nominal (Rp)": 0}
     ])
 
 edited_ops = st.data_editor(
@@ -44,53 +39,52 @@ edited_ops = st.data_editor(
     key="ops_editor"
 )
 
-# --- 3. KALKULASI OTOMATIS ---
-total_stok_semua = edited_produk["Stok"].sum()
+# --- 3. KALKULASI AMAN ---
+# Kita pastikan angka tidak kosong supaya tidak error
+total_stok = edited_produk["Stok"].replace(0, 1).sum() 
 total_biaya_ops = edited_ops["Nominal (Rp)"].sum()
+ops_per_unit = total_biaya_ops / total_stok if total_stok > 0 else 0
 
-# Hitung biaya ops per 1 unit barang (dibagi rata ke semua stok)
-ops_per_unit = total_biaya_ops / total_stok_semua if total_stok_semua > 0 else 0
-
-# Tambahkan kolom perhitungan ke tabel produk
+# Gabungkan data
 df_hasil = edited_produk.copy()
-df_hasil["HPP Satuan"] = (df_hasil["Harga Beli Total"] / df_hasil["Stok"]) + ops_per_unit
+# Pastikan kolom angka adalah tipe numerik agar tidak TypeError
+df_hasil["Stok"] = pd.to_numeric(df_hasil["Stok"], errors='coerce').fillna(0)
+df_hasil["Harga Beli Total"] = pd.to_numeric(df_hasil["Harga Beli Total"], errors='coerce').fillna(0)
+
+df_hasil["HPP Satuan"] = (df_hasil["Harga Beli Total"] / df_hasil["Stok"].replace(0, 1)) + ops_per_unit
 
 st.markdown("---")
 
-# --- 4. TARGET UNTUNG & HASIL AKHIR ---
+# --- 4. TARGET UNTUNG ---
 st.subheader("💰 3. Analisis Harga Jual & Cuan")
 margin = st.slider("Target Margin Untung (%)", 0, 100, 30)
 
 df_hasil["Harga Jual"] = df_hasil["HPP Satuan"] * (1 + margin/100)
 df_hasil["Total Laba"] = (df_hasil["Harga Jual"] - df_hasil["HPP Satuan"]) * df_hasil["Stok"]
 
-# Tampilkan Tabel Hasil Akhir
-st.dataframe(
-    df_hasil.style.format({
-        "Harga Beli Total": "Rp {:,.0f}",
-        "HPP Satuan": "Rp {:,.0f}",
-        "Harga Jual": "Rp {:,.0f}",
-        "Total Laba": "Rp {:,.0f}"
-    }),
-    use_container_width=True
-)
+# Tampilan Tabel Hasil (Tanpa Format Ribuan yang bikin Error)
+st.write("### 📋 Hasil Perhitungan")
+st.dataframe(df_hasil, use_container_width=True)
 
 # Ringkasan Total
-col1, col2 = st.columns(2)
-col1.metric("Total Modal Keseluruhan", f"Rp {df_hasil['Harga Beli Total'].sum() + total_biaya_ops:,.0f}")
-col2.metric("Total Potensi Laba Bersih", f"Rp {df_hasil['Total Laba'].sum():,.0f}", delta="Cuan!")
+st.markdown("---")
+c1, c2 = st.columns(2)
+total_modal = df_hasil["Harga Beli Total"].sum() + total_biaya_ops
+total_cuan = df_hasil["Total Laba"].sum()
+
+c1.metric("Total Modal Keseluruhan", f"Rp {total_modal:,.0f}")
+c2.metric("Total Potensi Laba Bersih", f"Rp {total_cuan:,.0f}")
 
 # --- 5. DOWNLOAD EXCEL ---
-st.markdown("---")
 output = BytesIO()
 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    df_hasil.to_excel(writer, index=False, sheet_name='Data_Produk_Cuan')
-    edited_ops.to_excel(writer, index=False, sheet_name='Rincian_Operasional')
+    df_hasil.to_excel(writer, index=False, sheet_name='Data_Cuan')
+    edited_ops.to_excel(writer, index=False, sheet_name='Biaya_Ops')
     writer.close()
 
 st.download_button(
-    label="🟢 Download Laporan Produk ke Excel (.xlsx)",
+    label="🟢 Download Laporan ke Excel",
     data=output.getvalue(),
-    file_name="Laporan_Dagang_Lengkap.xlsx",
+    file_name="Laporan_Dagang.xlsx",
     mime="application/vnd.ms-excel"
 )
