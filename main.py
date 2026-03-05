@@ -2,84 +2,95 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-st.set_page_config(page_title="Excel Kalkulator Dagang", layout="wide")
+st.set_page_config(page_title="Kalkulator Dagang Multi-Produk", layout="wide")
 
-st.title("📊 Mode Excel: Kalkulator HPP & Biaya Rinci")
-st.markdown("Isi tabel di bawah ini untuk menghitung modal dan keuntungan secara mendalam.")
+st.title("📊 Mode Excel: Multi-Produk & Biaya Rinci")
+st.markdown("Isi kedua tabel di bawah ini. Semua hitungan akan otomatis terupdate!")
 
-# --- BAGIAN 1: DATA UTAMA ---
-st.subheader("📦 1. Data Barang")
-col1, col2, col3 = st.columns(3)
-with col1:
-    nama_produk = st.text_input("Nama Produk", "Produk Baru")
-with col2:
-    stok = st.number_input("Jumlah Stok (Unit)", min_value=1, value=1)
-with col3:
-    harga_barang = st.number_input("Harga Beli Total Barang (Rp)", min_value=0, step=1000)
+# --- 1. TABEL DAFTAR PRODUK ---
+st.subheader("📦 1. Daftar Produk")
+st.caption("Masukkan semua barang daganganmu di sini. Klik (+) untuk tambah barang baru.")
 
-st.markdown("---")
-
-# --- BAGIAN 2: TABEL EXCEL BIAYA OPERASIONAL ---
-st.subheader("📝 2. Rincian Biaya Operasional (Tabel Excel)")
-st.caption("Klik sel untuk mengubah nama biaya atau angkanya. Klik (+) di bawah tabel untuk tambah baris baru.")
-
-# Inisialisasi template tabel biaya
-if 'df_excel' not in st.session_state:
-    st.session_state.df_excel = pd.DataFrame([
-        {"Komponen Biaya": "Packing (Plastik/Bubble)", "Nominal (Rp)": 0},
-        {"Komponen Biaya": "Ongkir Masuk", "Nominal (Rp)": 0},
-        {"Komponen Biaya": "Lakban/Label", "Nominal (Rp)": 0},
-        {"Komponen Biaya": "Admin Marketplace", "Nominal (Rp)": 0}
+# Inisialisasi template tabel produk
+if 'df_produk' not in st.session_state:
+    st.session_state.df_produk = pd.DataFrame([
+        {"Nama Barang": "Produk A", "Stok": 10, "Harga Beli Total": 100000},
+        {"Nama Barang": "Produk B", "Stok": 5, "Harga Beli Total": 50000}
     ])
 
-# Tampilan Editor Tabel ala Excel
-edited_df = st.data_editor(
-    st.session_state.df_excel,
+edited_produk = st.data_editor(
+    st.session_state.df_produk,
     num_rows="dynamic",
     use_container_width=True,
-    key="excel_editor"
+    key="produk_editor"
 )
 
-# --- BAGIAN 3: KALKULASI AUTOMATIS ---
-total_operasional = edited_df["Nominal (Rp)"].sum()
-hpp_per_unit = (harga_barang + total_operasional) / stok
+st.markdown("---")
+
+# --- 2. TABEL BIAYA OPERASIONAL ---
+st.subheader("🛠️ 2. Rincian Biaya Operasional Umum")
+st.caption("Biaya ini adalah total biaya operasional (misal: ongkir total, total plastik) yang akan dibagi rata ke semua stok barang di atas.")
+
+if 'df_ops' not in st.session_state:
+    st.session_state.df_ops = pd.DataFrame([
+        {"Komponen Biaya": "Ongkir Masuk", "Nominal (Rp)": 15000},
+        {"Komponen Biaya": "Packing & Lakban", "Nominal (Rp)": 5000}
+    ])
+
+edited_ops = st.data_editor(
+    st.session_state.df_ops,
+    num_rows="dynamic",
+    use_container_width=True,
+    key="ops_editor"
+)
+
+# --- 3. KALKULASI OTOMATIS ---
+total_stok_semua = edited_produk["Stok"].sum()
+total_biaya_ops = edited_ops["Nominal (Rp)"].sum()
+
+# Hitung biaya ops per 1 unit barang (dibagi rata ke semua stok)
+ops_per_unit = total_biaya_ops / total_stok_semua if total_stok_semua > 0 else 0
+
+# Tambahkan kolom perhitungan ke tabel produk
+df_hasil = edited_produk.copy()
+df_hasil["HPP Satuan"] = (df_hasil["Harga Beli Total"] / df_hasil["Stok"]) + ops_per_unit
 
 st.markdown("---")
 
-# --- BAGIAN 4: TARGET & HASIL ---
-st.subheader("💰 3. Target Untung & Harga Jual")
-margin = st.slider("Mau ambil margin berapa %?", 0, 100, 20)
+# --- 4. TARGET UNTUNG & HASIL AKHIR ---
+st.subheader("💰 3. Analisis Harga Jual & Cuan")
+margin = st.slider("Target Margin Untung (%)", 0, 100, 30)
 
-harga_jual = hpp_per_unit * (1 + margin/100)
-laba_bersih = (harga_jual - hpp_per_unit) * stok
+df_hasil["Harga Jual"] = df_hasil["HPP Satuan"] * (1 + margin/100)
+df_hasil["Total Laba"] = (df_hasil["Harga Jual"] - df_hasil["HPP Satuan"]) * df_hasil["Stok"]
 
-# Ringkasan Cantik
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Modal (HPP)", f"Rp {harga_barang + total_operasional:,.0f}")
-c2.metric("Harga Jual / Unit", f"Rp {harga_jual:,.0f}")
-c3.metric("Total Laba Bersih", f"Rp {laba_bersih:,.0f}")
+# Tampilkan Tabel Hasil Akhir
+st.dataframe(
+    df_hasil.style.format({
+        "Harga Beli Total": "Rp {:,.0f}",
+        "HPP Satuan": "Rp {:,.0f}",
+        "Harga Jual": "Rp {:,.0f}",
+        "Total Laba": "Rp {:,.0f}"
+    }),
+    use_container_width=True
+)
 
-# --- BAGIAN 5: DOWNLOAD EXCEL ---
+# Ringkasan Total
+col1, col2 = st.columns(2)
+col1.metric("Total Modal Keseluruhan", f"Rp {df_hasil['Harga Beli Total'].sum() + total_biaya_ops:,.0f}")
+col2.metric("Total Potensi Laba Bersih", f"Rp {df_hasil['Total Laba'].sum():,.0f}", delta="Cuan!")
+
+# --- 5. DOWNLOAD EXCEL ---
 st.markdown("---")
-# Membuat file Excel sungguhan di memori
 output = BytesIO()
 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    # Gabungkan data untuk laporan
-    df_laporan = pd.concat([
-        pd.DataFrame([{"Keterangan": "Nama Produk", "Nilai": nama_produk}, {"Keterangan": "Stok", "Nilai": stok}]),
-        edited_df.rename(columns={"Komponen Biaya": "Keterangan", "Nominal (Rp)": "Nilai"}),
-        pd.DataFrame([
-            {"Keterangan": "HPP per Unit", "Nilai": hpp_per_unit},
-            {"Keterangan": "Harga Jual", "Nilai": harga_jual},
-            {"Keterangan": "Total Laba", "Nilai": laba_bersih}
-        ])
-    ])
-    df_laporan.to_excel(writer, index=False, sheet_name='Laporan_Cuan')
+    df_hasil.to_excel(writer, index=False, sheet_name='Data_Produk_Cuan')
+    edited_ops.to_excel(writer, index=False, sheet_name='Rincian_Operasional')
     writer.close()
 
 st.download_button(
-    label="🟢 Download Hasil ke File Excel (.xlsx)",
+    label="🟢 Download Laporan Produk ke Excel (.xlsx)",
     data=output.getvalue(),
-    file_name=f"Laporan_{nama_produk}.xlsx",
+    file_name="Laporan_Dagang_Lengkap.xlsx",
     mime="application/vnd.ms-excel"
 )
