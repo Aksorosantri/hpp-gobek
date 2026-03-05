@@ -4,8 +4,8 @@ from io import BytesIO
 
 st.set_page_config(page_title="Kalkulator Dagang Pro", layout="wide")
 
-st.title("📊 Mode Excel: Multi-Produk & Biaya Rinci")
-st.markdown("Isi tabel di bawah ini. Gunakan angka saja tanpa titik/koma saat input.")
+st.title("NEW GOBEK😎")
+st.markdown("Ganteng iku nomer 17, dadi wong lanang pokok siji...SOGEH")
 
 # --- 1. TABEL DAFTAR PRODUK ---
 st.subheader("📦 1. Daftar Produk")
